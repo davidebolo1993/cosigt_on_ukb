@@ -1,0 +1,6 @@
+resources
+resources/*
+config
+config/*
+cosigt_ukbb
+cosigt_ukbb/*
