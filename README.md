@@ -14,10 +14,9 @@ The pipeline is designed for parallel execution on HPC systems using SLURM.
 
 ## Prerequisites
 
-- Singularity (tested with 3.8.5)
+- Singularity
 - SLURM job scheduler
 - Python 3.6+
-- R with required packages (for clustering and outlier filtering)
 
 ## Input Files
 
