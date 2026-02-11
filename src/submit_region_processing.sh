@@ -189,7 +189,7 @@ while read -r REGION; do
         --cpus-per-task=${THREADS} \
         --mem=${MEMORY} \
         --partition=${PARTITION} \
-        --wrap="module load singularity 2>/dev/null || true; bash src/run_cosigt_region.sh ${REGION} ${CONFIG} ${THREADS} ${CACHE_DIR} ${TMP_DIR}")
+        --wrap="module load singularity 2>/dev/null || true; bash src/process.sh ${REGION} ${CONFIG} ${THREADS} ${CACHE_DIR} ${TMP_DIR}")
     
     REGION_JOBS+=("$JOB_ID")
     echo "[${REGION}] Submitted (Job ID: ${JOB_ID})"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 ################################################################################
 # COSIGT Pipeline - Preprocessing Reference (Run Once)
@@ -110,8 +109,14 @@ get_container() {
     local path="${CONTAINER_DIR}/${name}"
     
     if [ ! -f "$path" ]; then
-        echo "[Container] Downloading: $docker_uri" >&2
-        singularity pull "$path" "$docker_uri"
+        echo "  [Container] WARNING: Container not found: $docker_uri" >&2
+        echo "              Expected: $path" >&2
+        echo "              Downloading now (this may cause issues if run in parallel)..." >&2
+        singularity pull "$path" "$docker_uri" || {
+            echo "  [Container] ERROR: Failed to download container!" >&2
+            echo "              Please run: bash src/download_containers.sh $CONFIG first" >&2
+            exit 1
+        }
     fi
     echo "$path"
 }
