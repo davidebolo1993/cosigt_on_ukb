@@ -113,11 +113,9 @@ RUN curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.
 
 ENV PATH=/miniconda/bin:${PATH}
 
-RUN conda config --set auto_accept_terms yes
-
 # Create conda R environment with required packages (minimal for our scripts)
 RUN conda update -y conda && \
-    conda create -y -n renv -c conda-forge -c bioconda \
+    conda create -y -n renv -c conda-forge \
     r-base=4.3.3 \
     r-data.table=1.16.4 \
     r-rjson=0.2.23 \

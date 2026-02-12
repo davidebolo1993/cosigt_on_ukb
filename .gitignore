@@ -10,3 +10,5 @@ singularity_cache
 singularity_cache/*
 cosigt_ukbrap_small
 cosigt_ukbrap_small/*
+singularity/*
+singularity
