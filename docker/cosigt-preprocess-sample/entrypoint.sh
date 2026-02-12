@@ -7,6 +7,6 @@ BRANCH="${COSIGT_BRANCH:-main}"
 echo "Cloning COSIGT scripts from $REPO_URL (branch: $BRANCH)..."
 git clone -b "$BRANCH" --depth 1 "$REPO_URL" /cosigt-scripts
 
-# Run preprocess_sample.sh with passed arguments
+#Run preprocess_sample.sh with passed arguments
 bash /cosigt-scripts/src/preprocess_sample.sh "$@"
 
