@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libncurses5-dev \
     pigz \
     parallel \
-    r-base \
     python3-distutils \
     python3-dev \
     libjemalloc-dev \
@@ -107,8 +106,26 @@ RUN git clone https://github.com/davidebolo1993/cosigt.git && \
     cp cosigt /usr/local/bin/ && \
     cd .. && rm -rf cosigt
 
-# Install R packages (minimal set needed)
-RUN R -e "install.packages(c('data.table', 'ggplot2', 'gridExtra', 'reshape2', 'rjson', 'dbscan', 'cluster'), repos='https://cloud.r-project.org/')"
+# Install Miniconda and create R environment
+RUN curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
+    bash Miniconda3-latest-Linux-x86_64.sh -p /miniconda -b && \
+    rm Miniconda3-latest-Linux-x86_64.sh
+
+ENV PATH=/miniconda/bin:${PATH}
+
+# Create conda R environment with required packages (minimal for our scripts)
+RUN conda update -y conda && \
+    conda create -y -n renv -c conda-forge -c bioconda \
+    r-base=4.3.3 \
+    r-data.table=1.16.4 \
+    r-rjson=0.2.23 \
+    r-reshape2=1.4.4 \
+    r-dbscan=1.2.2 \
+    r-cluster
+
+# Activate conda environment by default
+RUN echo "source activate renv" > ~/.bashrc
+ENV PATH=/miniconda/envs/renv/bin:${PATH}
 
 # Copy all scripts and R files into the image
 COPY process_region_docker.sh /usr/local/bin/process_region_docker.sh
