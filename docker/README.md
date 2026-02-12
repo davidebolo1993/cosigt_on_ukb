@@ -1,6 +1,6 @@
 # COSIGT Pipeline - Dockerized Version
 
-COSIGT pipeline for genotyping from pangenome graphs using Docker/Singularity containers. This implementation is designed to run on HPC systems and cloud platforms, starting from pre-built variation graphs.
+COSIGT pipeline for genotyping from pangenome graphs using Docker/Singularity containers. This implementation is designed to run on HPC systems starting from pre-built variation graphs.
 
 ## Overview
 
@@ -16,8 +16,6 @@ All pipeline steps run through Singularity containers, ensuring reproducibility 
 ## Prerequisites
 
 - Singularity (≥3.5)
-- Sufficient storage for intermediate files
-- Access to input data (graphs, alignments, reference genome)
 
 ## Container Images
 
