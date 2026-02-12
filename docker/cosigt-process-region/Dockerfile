@@ -113,6 +113,10 @@ RUN curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.
 
 ENV PATH=/miniconda/bin:${PATH}
 
+# Accept Terms of Service for Anaconda channels - otherwise it fails
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 # Create conda R environment with required packages (minimal for our scripts)
 RUN conda update -y conda && \
     conda create -y -n renv -c conda-forge \
