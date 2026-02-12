@@ -3,12 +3,14 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install base dependencies
-RUN apt-get update && apt-get install -y \
-    wget \
-    curl \
-    git \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    wget \
+    ca-certificates \
+    git \
+    pkg-config \
     cmake \
+    curl \
     zlib1g-dev \
     libbz2-dev \
     liblzma-dev \
@@ -25,7 +27,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Go 1.19.1
 RUN wget -q https://go.dev/dl/go1.19.1.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.19.1.linux-amd64.tar.gz && \
+    tar -xf go1.19.1.linux-amd64.tar.gz -C /usr/local && \
     rm go1.19.1.linux-amd64.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
@@ -36,7 +38,7 @@ RUN rustup update
 
 # Install samtools 1.22
 RUN wget -q https://github.com/samtools/samtools/releases/download/1.22/samtools-1.22.tar.bz2 && \
-    tar -xjf samtools-1.22.tar.bz2 && \
+    tar -xf samtools-1.22.tar.bz2 && \
     cd samtools-1.22 && \
     ./configure --prefix=/usr/local && \
     make -j $(nproc) && \
@@ -45,7 +47,7 @@ RUN wget -q https://github.com/samtools/samtools/releases/download/1.22/samtools
 
 # Install BWA-MEM2 2.2.1
 RUN wget -q https://github.com/bwa-mem2/bwa-mem2/releases/download/v2.2.1/bwa-mem2-2.2.1_x64-linux.tar.bz2 && \
-    tar -xjf bwa-mem2-2.2.1_x64-linux.tar.bz2 && \
+    tar -xf bwa-mem2-2.2.1_x64-linux.tar.bz2 && \
     mv bwa-mem2-2.2.1_x64-linux/bwa-mem2* /usr/local/bin/ && \
     rm -rf bwa-mem2-2.2.1*
 
@@ -57,8 +59,8 @@ RUN wget -q https://github.com/arq5x/bedtools2/releases/download/v2.31.0/bedtool
 # Install meryl
 RUN wget -q https://github.com/marbl/meryl/releases/download/v1.4.1/meryl-1.4.1.Linux-amd64.tar.xz && \
     tar -xf meryl-1.4.1.Linux-amd64.tar.xz && \
-    cp meryl-1.4.1/bin/* /usr/local/bin/ && \
-    rm -rf meryl-1.4.1*
+    rm meryl-1.4.1.Linux-amd64.tar.xz
+ENV PATH="/meryl-1.4.1/bin:${PATH}"
 
 # Install kfilt (Go)
 RUN git clone https://github.com/davidebolo1993/kfilt && \
@@ -69,35 +71,39 @@ RUN git clone https://github.com/davidebolo1993/kfilt && \
     cp kfilt /usr/local/bin/ && \
     cd .. && rm -rf kfilt
 
-# Install ODGI (CMake build)
+# Install ODGI (CMake build) - use correct path
 RUN git clone --recursive https://github.com/pangenome/odgi.git && \
     cd odgi && \
-    cmake -H. -Bbuild && \
+    cmake -H. -DCMAKE_BUILD_TYPE=Generic -Bbuild && \
     cmake --build build -- -j $(nproc) && \
-    cp build/bin/odgi /usr/local/bin/ && \
+    cp bin/odgi /usr/local/bin/odgi && \
     cd .. && rm -rf odgi
 
 # Install gfainject (Rust)
 RUN git clone https://github.com/AndreaGuarracino/gfainject && \
     cd gfainject && \
+    git checkout 889b9f934ef23d3b804a8ff8c085bda2b9224e7c && \
     cargo install --force --path . && \
     cd .. && rm -rf gfainject
 
 # Install gafpack (Rust)
 RUN git clone https://github.com/pangenome/gafpack.git && \
     cd gafpack && \
+    git checkout f08c04b4596bd9c40b0e62641f37c2500b956a1a && \
     cargo install --force --path . && \
     cd .. && rm -rf gafpack
 
 # Install panplexity (Rust)
 RUN git clone https://github.com/AndreaGuarracino/panplexity && \
     cd panplexity && \
+    git checkout 9e80407720d9cceb9fe4893894fe86ec580d4f46 && \
     cargo install --force --path . && \
     cd .. && rm -rf panplexity
 
 # Install cosigt (Go)
 RUN git clone https://github.com/davidebolo1993/cosigt.git && \
     cd cosigt && \
+    git checkout 6fcba22a63131a4aca29c0d0fbf11d13039339e8 && \
     go mod init cosigt && \
     go mod tidy && \
     go build && \
@@ -107,9 +113,11 @@ RUN git clone https://github.com/davidebolo1993/cosigt.git && \
 # Install R packages (minimal set needed)
 RUN R -e "install.packages(c('data.table', 'ggplot2', 'gridExtra', 'reshape2', 'rjson', 'dbscan', 'cluster'), repos='https://cloud.r-project.org/')"
 
-# Copy R scripts into the image
+# Copy all scripts and R files into the image
+COPY process_region_docker.sh /usr/local/bin/process_region_docker.sh
 COPY cluster.r /usr/local/bin/cluster.r
 COPY coverage_outliers.r /usr/local/bin/coverage_outliers.r
+RUN chmod +x /usr/local/bin/process_region_docker.sh
 RUN chmod +x /usr/local/bin/*.r
 
 WORKDIR /work
