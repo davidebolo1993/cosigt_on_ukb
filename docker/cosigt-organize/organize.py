@@ -1,231 +1,321 @@
 #!/usr/bin/env python3
 
-"""
-organize.py - Create resources directory structure and config.yaml for COSIGT pipeline
-Handles both native execution and Docker/Singularity container paths
-"""
-
 import os
 import sys
-import argparse
 import yaml
-from pathlib import Path
+import argparse
 
-def strip_container_prefix(path, workdir="/work"):
-    """
-    Convert container path back to host path if running in container.
+def validate_graph(graph_path):
+    """Validate .og graph file"""
+    if not os.path.exists(graph_path):
+        print(f'Graph file: {graph_path} does not exist!')
+        return False
+    if not os.path.isabs(graph_path):
+        print(f'Graph file: {graph_path} is not readable!')
+        return False
+    if not graph_path.endswith('.og'):
+        print(f'Graph file: {graph_path} must have .og extension!')
+        return False
+    return True
 
-    If path starts with /work and workdir exists, strip it.
-    Otherwise return path unchanged.
+def read_graphs_file(graphs_file):
+    """Read and validate the graphs specified in the tsv"""
+    graphs_out = dict()
+    if not os.path.exists(graphs_file):
+        print(f'Table with graphs: {graphs_file} does not exist!')
+        sys.exit(1)
 
-    Args:
-        path: Absolute or relative path (may include container prefix)
-        workdir: Container working directory prefix to strip
+    with open(graphs_file) as graphs_in:
+        for line in graphs_in:
+            line = line.rstrip()
+            if not line:
+                continue
+            entries = line.split('\t')
+            if len(entries) != 2:
+                print(f'Table with graphs: {graphs_file} does not match expected format!')
+                sys.exit(1)
 
-    Returns:
-        Path usable from host system
-    """
-    path_str = str(path)
+            region = entries[0]
+            graph = entries[1]
 
-    # If running inside container and path starts with /work
-    if path_str.startswith(workdir + "/"):
-        # Get the part after /work/
-        stripped = path_str[len(workdir)+1:]
+            if region in graphs_out:
+                print(f'Table with graphs: {graphs_file} contains duplicate region!')
+                sys.exit(1)
 
-        # Convert to absolute path relative to current directory
-        # (which is /work inside container, but actual dir on host)
-        return os.path.abspath(stripped)
+            if validate_graph(graph):
+                # Keep absolute paths as-is, make relative paths absolute
+                graphs_out[region] = graph if os.path.isabs(graph) else os.path.abspath(graph)
+            else:
+                sys.exit(1)
 
-    return path_str
+    print(f'Loaded table with graphs: {graphs_file}!')
+    return graphs_out
 
-def create_symlink(source, target):
-    """
-    Create symlink with container path handling.
+def validate_alignment(alignment):
+    """Validate alignment file"""
+    if not os.path.exists(alignment):
+        print(f'Alignment file: {alignment} does not exist!')
+        return False
+    if alignment.endswith('.bam'):
+        if not os.path.exists(alignment + '.bai') and not os.path.exists(alignment + '.csi'):
+            print(f'Alignment file: {alignment} is not indexed - expected .bai/.csi!')
+            return False
+    if alignment.endswith('.cram'):
+        if not os.path.exists(alignment + '.crai'):
+            print(f'Alignment file: {alignment} is not indexed - expected .crai!')
+            return False
+    return True
 
-    Args:
-        source: Source file (may have container prefix)
-        target: Where to create symlink
-    """
-    # Strip container prefix from source path
-    source_clean = strip_container_prefix(source)
+def read_alignments_map(alignment_map_file):
+    """Read alignments TSV: alignment_path<tab>sample_id"""
+    aln_dict = dict()
+    if not os.path.exists(alignment_map_file):
+        print(f'Alignments table: {alignment_map_file} does not exist!')
+        sys.exit(1)
 
-    # Create parent directory if needed
-    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(alignment_map_file, 'r') as map_in:
+        for line in map_in:
+            line = line.rstrip()
+            if not line:
+                continue
+            try:
+                aln_path, aln_id = line.split('\t')
+            except ValueError:
+                print(f'Alignments table has invalid line: {line}')
+                sys.exit(1)
 
-    # Create symlink
-    if os.path.lexists(target):
-        os.remove(target)
+            # Keep absolute paths as-is, make relative paths absolute
+            aln_path = aln_path if os.path.isabs(aln_path) else os.path.abspath(aln_path)
 
-    os.symlink(source_clean, target)
+            if aln_id in aln_dict:
+                print(f'Duplicate sample id: {aln_id}!')
+                sys.exit(1)
+
+            if not validate_alignment(aln_path):
+                sys.exit(1)
+
+            aln_dict[aln_id] = aln_path
+
+    print(f'Loaded alignments from: {alignment_map_file}!')
+    return aln_dict
+
+def read_bed(bed_file, graphs_dict):
+    """Read bed file and organize regions"""
+    bed_dict = dict()
+    if not os.path.exists(bed_file):
+        print(f'Bed file: {bed_file} does not exist!')
+        sys.exit(1)
+
+    with open(bed_file, 'r') as bedin:
+        for line in bedin:
+            bed_entry = line.rstrip().split('\t')
+            if len(bed_entry) < 3:
+                print(f'Invalid entry in {bed_file}: less than 3 columns')
+                sys.exit(1)
+
+            chrom = bed_entry[0]
+            start = bed_entry[1]
+            end = bed_entry[2]
+            annot = bed_entry[3] if len(bed_entry) >= 4 else "unknown"
+            alt = bed_entry[4] if len(bed_entry) == 5 else None
+
+            region = '_'.join([chrom, start, end])
+
+            if region not in graphs_dict:
+                print(f'Region: {region} in bed file is missing in the graphs table!')
+                sys.exit(1)
+
+            if region not in bed_dict:
+                bed_dict[region] = [(chrom, start, end, annot, alt)]
+            else:
+                bed_dict[region].append((chrom, start, end, annot, alt))
+
+    print(f'Loaded bed file: {bed_file}!')
+    return bed_dict
+
+def read_genome(genome_file):
+    """Read and validate reference genome"""
+    if not os.path.exists(genome_file):
+        print(f'Genome file: {genome_file} does not exist!')
+        sys.exit(1)
+    if not genome_file.endswith(('.fa', '.fasta', '.fa.gz', '.fasta.gz', '.fna', '.fna.gz')):
+        print(f'Genome file: {genome_file} must be FASTA format!')
+        sys.exit(1)
+    if not os.path.exists(genome_file + '.fai'):
+        print(f'Genome file: {genome_file} is not indexed!')
+        sys.exit(1)
+
+    print(f'Loaded reference: {genome_file}!')
+    # Keep absolute paths as-is, make relative paths absolute
+    return genome_file if os.path.isabs(genome_file) else os.path.abspath(genome_file)
+
+def write_graphs(graphs_dict, bed_dict, RESOURCES):
+    """Write graph symlinks to resources/assemblies"""
+    graphs_dir = os.path.join(RESOURCES, 'assemblies')
+    os.makedirs(graphs_dir, exist_ok=True)
+
+    for region, graph_path in graphs_dict.items():
+        if region in bed_dict:
+            chrom = region.split('_')[0]
+            chrom_folder = os.path.join(graphs_dir, chrom)
+            os.makedirs(chrom_folder, exist_ok=True)
+            graph_link = os.path.join(chrom_folder, f'{region}.og')
+            if os.path.lexists(graph_link):
+                os.remove(graph_link)
+            os.symlink(graph_path, graph_link)
+
+    print(f'Added graphs to: {graphs_dir}!')
+
+def write_alignments(aln_dict, RESOURCES):
+    """Write alignment symlinks to resources/alignments"""
+    aln_dir = os.path.join(RESOURCES, 'alignments')
+    os.makedirs(aln_dir, exist_ok=True)
+
+    samples = []
+    for sample_id, aln_path in aln_dict.items():
+        if aln_path.endswith('.bam'):
+            aln_link = f'{sample_id}.bam'
+            idx_ext = '.bai' if os.path.exists(aln_path + '.bai') else '.csi'
+        else:
+            aln_link = f'{sample_id}.cram'
+            idx_ext = '.crai'
+
+        link_path = os.path.join(aln_dir, aln_link)
+        if os.path.lexists(link_path):
+            os.remove(link_path)
+        os.symlink(aln_path, link_path)
+
+        idx_link = os.path.join(aln_dir, aln_link + idx_ext)
+        if os.path.lexists(idx_link):
+            os.remove(idx_link)
+        os.symlink(aln_path + idx_ext, idx_link)
+
+        samples.append(sample_id)
+
+    print(f'Added alignments to: {aln_dir}!')
+    return samples
+
+def write_regions(bed_dict, RESOURCES):
+    """Write region bed files to resources/regions"""
+    reg_dir = os.path.join(RESOURCES, 'regions')
+    os.makedirs(reg_dir, exist_ok=True)
+
+    regions = []
+    for region, bed_entries in bed_dict.items():
+        bed_dir = os.path.join(reg_dir, region.split('_')[0])
+        os.makedirs(bed_dir, exist_ok=True)
+
+        for subr in bed_entries:
+            region_name = '_'.join(subr[:-2])
+            bed_out = os.path.join(bed_dir, f'{region_name}.bed')
+            with open(bed_out, 'w') as b_out:
+                b_out.write('\t'.join(subr[:-1]) + '\n')
+
+                if subr[-1] is not None:
+                    alts = subr[-1].split(',')
+                    for alt in alts:
+                        last = alt.rfind(':')
+                        chr_alt, rest_alt = alt[:last], alt[last+1:]
+                        start_alt, end_alt = rest_alt.split('-')
+                        b_out.write('\t'.join([chr_alt, start_alt, end_alt]) + '\n')
+
+            regions.append(region_name)
+
+    print(f'Added regions to: {reg_dir}!')
+    return regions
+
+def write_reference(reference_path, RESOURCES):
+    """Write reference symlink to resources/reference"""
+    ref_dir = os.path.join(RESOURCES, 'reference')
+    os.makedirs(ref_dir, exist_ok=True)
+
+    ref_name = os.path.basename(reference_path)
+    ref_link = os.path.join(ref_dir, ref_name)
+    if os.path.lexists(ref_link):
+        os.remove(ref_link)
+    os.symlink(reference_path, ref_link)
+
+    fai_link = os.path.join(ref_dir, ref_name + '.fai')
+    if os.path.lexists(fai_link):
+        os.remove(fai_link)
+    os.symlink(reference_path + '.fai', fai_link)
+
+    # Return RELATIVE path for config
+    ref_rel = os.path.join('resources', 'reference', ref_name)
+    print(f'Added reference to: {ref_dir}!')
+    return ref_rel
+
+def write_config(samples, regions, reference, output_dir, pansn_prefix, CONFIG):
+    """Write config.yaml"""
+    config = {
+        'samples': samples,
+        'regions': regions,
+        'reference': reference,
+        'output': os.path.abspath(output_dir),
+        'pansn_prefix': pansn_prefix
+    }
+
+    config_out = os.path.join(CONFIG, 'config.yaml')
+    with open(config_out, 'w') as yml_out:
+        yaml.dump(config, yml_out, default_flow_style=False)
+
+    print(f'Wrote config to: {config_out}!')
+
+def setup_arg_parser():
+    """Argument parser"""
+    parser = argparse.ArgumentParser(
+        prog='organize.py',
+        description='Organize inputs for COSIGT pipeline'
+    )
+
+    parser.add_argument('-g', '--graphs', required=True, help='Graphs TSV')
+    parser.add_argument('-r', '--reads', required=True, help='Alignments TSV')
+    parser.add_argument('-b', '--bed', required=True, help='Regions BED')
+    parser.add_argument('-f', '--reference', required=True, help='Reference FASTA')
+    parser.add_argument('-o', '--output', required=True, help='Output directory')
+    parser.add_argument('--pansn', default='grch38#1#', help='PanSN prefix')
+
+    return parser
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Organize COSIGT pipeline resources and create config"
-    )
-    parser.add_argument("-g", "--graphs", required=True, 
-                       help="TSV file mapping chromosomes to graph files")
-    parser.add_argument("-r", "--reads", required=True,
-                       help="TSV file mapping samples to alignment files")
-    parser.add_argument("-b", "--bed", required=True,
-                       help="BED file with regions of interest")
-    parser.add_argument("-f", "--fasta", required=True,
-                       help="Reference genome FASTA file")
-    parser.add_argument("-o", "--outdir", required=True,
-                       help="Output directory for pipeline results")
-    parser.add_argument("-p", "--prefix", default="grch38#1#",
-                       help="PanSN prefix for path names (default: grch38#1#)")
-
+    """Main function"""
+    parser = setup_arg_parser()
     args = parser.parse_args()
 
-    # Create directory structure
-    resources_dir = Path("resources")
-    config_dir = Path("config")
+    BASE = os.getcwd()
+    RESOURCES = os.path.join(BASE, 'resources')
+    CONFIG = os.path.join(BASE, 'config')
+
+    if os.path.isdir(RESOURCES) and os.listdir(RESOURCES):
+        print(f"Directory {RESOURCES} is not empty: clean it and retry!")
+        sys.exit(1)
+
+    os.makedirs(RESOURCES, exist_ok=True)
+    os.makedirs(CONFIG, exist_ok=True)
 
     print("=" * 60)
     print("Reading inputs...")
     print("=" * 60)
 
-    # Read graph mapping
-    graphs = {}
-    with open(args.graphs) as f:
-        for line in f:
-            if line.strip():
-                chrom, graph_path = line.strip().split("\t")
-                # Verify file exists
-                clean_path = strip_container_prefix(graph_path)
-                if not os.path.exists(clean_path):
-                    print(f"WARNING: Graph file does not exist: {clean_path}")
-                graphs[chrom] = graph_path
-
-    print(f"Loaded table with graphs: {args.graphs}!")
-
-    # Read BED file to get regions
-    regions = {}
-    with open(args.bed) as f:
-        for line in f:
-            if line.strip() and not line.startswith("#"):
-                parts = line.strip().split("\t")
-                chrom = parts[0]
-                start = parts[1]
-                end = parts[2]
-                region_id = f"{chrom}_{start}_{end}"
-
-                if chrom not in regions:
-                    regions[chrom] = []
-                regions[chrom].append({
-                    "id": region_id,
-                    "line": line.strip()
-                })
-
-    print(f"Loaded bed file: {args.bed}!")
-
-    # Read alignment mapping
-    samples = {}
-    with open(args.reads) as f:
-        for line in f:
-            if line.strip():
-                sample, aln_path = line.strip().split("\t")
-                # Verify file exists
-                clean_path = strip_container_prefix(aln_path)
-                if not os.path.exists(clean_path):
-                    print(f"WARNING: Alignment file does not exist: {clean_path}")
-                samples[sample] = aln_path
-
-    print(f"Loaded alignments from: {args.reads}!")
-
-    # Verify reference exists
-    clean_fasta = strip_container_prefix(args.fasta)
-    if not os.path.exists(clean_fasta):
-        print(f"WARNING: Reference file does not exist: {clean_fasta}")
-
-    print(f"Loaded reference: {args.fasta}!")
+    graphs_dict = read_graphs_file(args.graphs)
+    bed_dict = read_bed(args.bed, graphs_dict)
+    aln_dict = read_alignments_map(args.reads)
+    reference = read_genome(args.reference)
 
     print("=" * 60)
     print("Writing resources...")
     print("=" * 60)
 
-    # Create assemblies symlinks (organized by chromosome)
-    assemblies_dir = resources_dir / "assemblies"
-    for chrom, graph_path in graphs.items():
-        chrom_dir = assemblies_dir / chrom
-        chrom_dir.mkdir(parents=True, exist_ok=True)
-
-        graph_name = os.path.basename(graph_path)
-        target = chrom_dir / graph_name
-        create_symlink(graph_path, target)
-
-    print(f"Added graphs to: {assemblies_dir}/!")
-
-    # Create alignments symlinks
-    alignments_dir = resources_dir / "alignments"
-    alignments_dir.mkdir(parents=True, exist_ok=True)
-
-    for sample, aln_path in samples.items():
-        aln_name = os.path.basename(aln_path)
-        target = alignments_dir / aln_name
-        create_symlink(aln_path, target)
-
-        # Also symlink index files if they exist
-        for ext in [".bai", ".crai", ".csi"]:
-            idx_path = aln_path + ext
-            clean_idx = strip_container_prefix(idx_path)
-            if os.path.exists(clean_idx):
-                idx_target = alignments_dir / (aln_name + ext)
-                create_symlink(idx_path, idx_target)
-
-    print(f"Added alignments to: {alignments_dir}/!")
-
-    # Create regions BED files (organized by chromosome)
-    regions_dir = resources_dir / "regions"
-    for chrom, chrom_regions in regions.items():
-        chrom_dir = regions_dir / chrom
-        chrom_dir.mkdir(parents=True, exist_ok=True)
-
-        for region in chrom_regions:
-            bed_file = chrom_dir / f"{region['id']}.bed"
-            with open(bed_file, 'w') as f:
-                f.write(region['line'] + "\n")
-
-    print(f"Added regions to: {regions_dir}/!")
-
-    # Create reference symlinks
-    reference_dir = resources_dir / "reference"
-    reference_dir.mkdir(parents=True, exist_ok=True)
-
-    ref_name = os.path.basename(args.fasta)
-    ref_target = reference_dir / ref_name
-    create_symlink(args.fasta, ref_target)
-
-    # Also symlink FAI index if exists
-    fai_path = args.fasta + ".fai"
-    clean_fai = strip_container_prefix(fai_path)
-    if os.path.exists(clean_fai):
-        fai_target = reference_dir / (ref_name + ".fai")
-        create_symlink(fai_path, fai_target)
-
-    print(f"Added reference to: {reference_dir}/!")
+    write_graphs(graphs_dict, bed_dict, RESOURCES)
+    samples = write_alignments(aln_dict, RESOURCES)
+    regions = write_regions(bed_dict, RESOURCES)
+    reference_link = write_reference(reference, RESOURCES)
 
     print("=" * 60)
     print("Writing configuration...")
     print("=" * 60)
 
-    # Create config.yaml
-    config_dir.mkdir(parents=True, exist_ok=True)
-
-    # Strip /work prefix from paths in config
-    config = {
-        "output": strip_container_prefix(args.outdir),
-        "pansn_prefix": args.prefix,
-        "reference": strip_container_prefix(str(ref_target)),
-        "regions": sorted([r["id"] for regions_list in regions.values() for r in regions_list]),
-        "samples": sorted(samples.keys())
-    }
-
-    config_file = config_dir / "config.yaml"
-    with open(config_file, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    print(f"Wrote config to: {config_file}!")
+    write_config(samples, regions, reference_link, args.output, args.pansn, CONFIG)
 
     print("=" * 60)
     print("✓ Setup complete!")
