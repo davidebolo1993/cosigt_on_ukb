@@ -35,6 +35,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup update
+RUN cargo install --locked maturin
 
 # Install samtools 1.22
 RUN wget -q https://github.com/samtools/samtools/releases/download/1.22/samtools-1.22.tar.bz2 && \
@@ -82,28 +83,24 @@ RUN git clone --recursive https://github.com/pangenome/odgi.git && \
 # Install gfainject (Rust)
 RUN git clone https://github.com/AndreaGuarracino/gfainject && \
     cd gfainject && \
-    git checkout 889b9f934ef23d3b804a8ff8c085bda2b9224e7c && \
     cargo install --force --path . && \
     cd .. && rm -rf gfainject
 
 # Install gafpack (Rust)
 RUN git clone https://github.com/pangenome/gafpack.git && \
     cd gafpack && \
-    git checkout f08c04b4596bd9c40b0e62641f37c2500b956a1a && \
     cargo install --force --path . && \
     cd .. && rm -rf gafpack
 
 # Install panplexity (Rust)
 RUN git clone https://github.com/AndreaGuarracino/panplexity && \
     cd panplexity && \
-    git checkout 9e80407720d9cceb9fe4893894fe86ec580d4f46 && \
     cargo install --force --path . && \
     cd .. && rm -rf panplexity
 
 # Install cosigt (Go)
 RUN git clone https://github.com/davidebolo1993/cosigt.git && \
     cd cosigt && \
-    git checkout 6fcba22a63131a4aca29c0d0fbf11d13039339e8 && \
     go mod init cosigt && \
     go mod tidy && \
     go build && \
