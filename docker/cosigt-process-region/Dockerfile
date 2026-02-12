@@ -38,12 +38,21 @@ RUN cargo install --locked maturin
 
 # Install samtools 1.22
 RUN wget -q https://github.com/samtools/samtools/releases/download/1.22/samtools-1.22.tar.bz2 && \
-    tar -xf samtools-1.22.tar.bz2 && \
+    tar -jxf samtools-1.22.tar.bz2 && \
     cd samtools-1.22 && \
     ./configure --prefix=/usr/local && \
     make -j $(nproc) && \
     make install && \
     cd .. && rm -rf samtools-1.22*
+
+# Install htslib 1.22
+RUN wget https://github.com/samtools/htslib/releases/download/1.22/htslib-1.22.tar.bz2 && \
+    tar -jxf htslib-1.22.tar.bz2 && \
+    cd htslib-1.22 && \
+    ./configure --prefix=/usr/local && \
+    make -j $(nproc) && \
+    make install && \
+    cd .. && rm -rf htslib-1.22*
 
 # Install BWA-MEM2 2.2.1
 RUN wget -q https://github.com/bwa-mem2/bwa-mem2/releases/download/v2.2.1/bwa-mem2-2.2.1_x64-linux.tar.bz2 && \
