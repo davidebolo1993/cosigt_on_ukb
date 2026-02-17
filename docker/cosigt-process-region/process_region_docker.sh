@@ -4,14 +4,12 @@ set -euo pipefail
 
 ################################################################################
 # COSIGT Pipeline - Region Processing (Docker/native version)
-# 
-# No Singularity - all tools available natively in container
 ################################################################################
 
 if [ "$#" -lt 3 ]; then
-    echo "Usage: $0 <region> <config_file> <threads>"
+    echo "Usage: $0 <REGION> <CONFIG> <THREADS>"
     echo ""
-    echo "Example: $0 chr1_100000_200000 config/config.yaml 12"
+    echo "Example: $0 chr1_100000_200000 config.yaml 12"
     exit 1
 fi
 
@@ -34,10 +32,53 @@ get_yaml_list() {
         sed 's/^[[:space:]]*-[[:space:]]*//' | tr -d "'" | tr -d '"' | grep -v '^[[:space:]]*$'
 }
 
-# Load configuration
+# Get graph path from TSV file
+get_graph_path() {
+    local region="$1"
+    local tsv_file="$2"
+
+    if [ ! -f "$tsv_file" ]; then
+        echo "ERROR: Graph map file not found: $tsv_file" >&2
+        return 1
+    fi
+
+    # TSV format: region<TAB>path  OR  path<TAB>region
+    # Try both formats
+    local graph_path=$(awk -v r="$region" '$1 == r {print $2}' "$tsv_file")
+    if [ -z "$graph_path" ]; then
+        graph_path=$(awk -v r="$region" '$2 == r {print $1}' "$tsv_file")
+    fi
+
+    echo "$graph_path"
+}
+
+# Get alignment path from TSV file
+get_sample_alignment() {
+    local sample="$1"
+    local tsv_file="$2"
+
+    if [ ! -f "$tsv_file" ]; then
+        echo "ERROR: Alignment map file not found: $tsv_file" >&2
+        return 1
+    fi
+
+    # TSV format: sample<TAB>path  OR  path<TAB>sample
+    local alignment=$(awk -v s="$sample" '$2 == s {print $1}' "$tsv_file")
+    if [ -z "$alignment" ]; then
+        alignment=$(awk -v s="$sample" '$1 == s {print $2}' "$tsv_file")
+    fi
+
+    echo "$alignment"
+}
+
+################################################################################
+# Load Configuration
+################################################################################
+
 OUTPUT_DIR=$(get_yaml_value "output")
 REFERENCE=$(get_yaml_value "reference")
-PANSN_PREFIX=$(get_yaml_value "pansn_prefix")
+ALIGNMENT_MAP=$(get_yaml_value "alignment_map")
+GRAPH_MAP=$(get_yaml_value "graph_map")
 
 # Load samples
 SAMPLES=()
@@ -52,6 +93,8 @@ echo "==================================================================="
 echo "COSIGT Pipeline - Region: $REGION (Chromosome: $CHROM)"
 echo "==================================================================="
 echo "Samples: ${#SAMPLES[@]} | Threads: $THREADS"
+echo "Graph map: $GRAPH_MAP"
+echo "Alignment map: $ALIGNMENT_MAP"
 echo "==================================================================="
 echo ""
 
@@ -64,7 +107,7 @@ if [ ! -d "$MERYL_REF_DB" ] || [ ! -f "${MERYL_REF_DB}/merylIndex" ]; then
     echo "ERROR: Reference k-mer database not found!"
     echo "  Expected: $MERYL_REF_DB"
     echo ""
-    echo "Please run preprocessing first"
+    echo "Please run preprocess_reference first"
     exit 1
 fi
 
@@ -77,13 +120,24 @@ echo "[Step 1] Processing graph and extracting assemblies"
 ALLELES_DIR="${OUTPUT_DIR}/alleles/${CHROM}/${REGION}"
 mkdir -p "$ALLELES_DIR"
 
-INPUT_GRAPH="resources/assemblies/${CHROM}/${REGION}.og"
+# Get graph path from map
+INPUT_GRAPH=$(get_graph_path "$REGION" "$GRAPH_MAP")
+
+if [ -z "$INPUT_GRAPH" ]; then
+    echo "ERROR: No graph found for region: $REGION"
+    echo "Please check $GRAPH_MAP contains an entry for $REGION"
+    exit 1
+fi
+
+echo "  Graph: $INPUT_GRAPH"
+
 if [ ! -f "$INPUT_GRAPH" ]; then
-    echo "ERROR: Graph not found: $INPUT_GRAPH"
+    echo "ERROR: Graph file not found: $INPUT_GRAPH"
     exit 1
 fi
 
 ALLELES_FASTA="${ALLELES_DIR}/${REGION}.fasta.gz"
+
 if [ ! -f "$ALLELES_FASTA" ]; then
     echo "  Extracting assemblies from graph..."
     odgi paths -i "$INPUT_GRAPH" -f | bgzip -c > "$ALLELES_FASTA"
@@ -118,7 +172,7 @@ if [ ! -f "$GFA_FILE" ]; then
 fi
 
 ################################################################################
-# Step 3: Prepare BED Files
+# Step 3: Prepare BED Files (SIMPLIFIED - no resources/regions needed)
 ################################################################################
 
 echo "[Step 3] Preparing BED files"
@@ -130,18 +184,18 @@ mkdir -p "${BEDTOOLS_DIR}/alignment_bed/${CHROM}/${REGION}"
 REF_BED="${BEDTOOLS_DIR}/reference_bed/${CHROM}/${REGION}/${REGION}.bed.gz"
 ALIGN_BED="${BEDTOOLS_DIR}/alignment_bed/${CHROM}/${REGION}/${REGION}.bed.gz"
 
-INPUT_BED="resources/regions/${CHROM}/${REGION}.bed"
+# Extract coordinates from region name (chr1_100000_200000 -> chr1 100000 200000)
+REGION_START=$(echo "$REGION" | rev | cut -d'_' -f2 | rev)
+REGION_END=$(echo "$REGION" | rev | cut -d'_' -f1 | rev)
 
 if [ ! -f "$REF_BED" ]; then
-    grep -w "$CHROM" "$INPUT_BED" | gzip > "$REF_BED"
+    echo "  Creating reference BED from region coordinates..."
+    echo -e "${CHROM}\t${REGION_START}\t${REGION_END}" | gzip > "$REF_BED"
 fi
 
 if [ ! -f "$ALIGN_BED" ]; then
-    TMP_SORTED=$(mktemp)
-    bedtools sort -i "$INPUT_BED" > "$TMP_SORTED"
-    bedtools intersect -a "$REF_BED" -b "$TMP_SORTED" -nonamecheck -u | gzip > "$ALIGN_BED"
-    bedtools intersect -a "$TMP_SORTED" -b "$REF_BED" -nonamecheck -v | gzip >> "$ALIGN_BED"
-    rm "$TMP_SORTED"
+    # For now, use same as reference BED (can be modified if needed)
+    cp "$REF_BED" "$ALIGN_BED"
 fi
 
 ################################################################################
@@ -152,11 +206,13 @@ echo "[Step 4] Building k-mer filter index"
 
 KFILT_DIR="${OUTPUT_DIR}/kfilt/index/${CHROM}/${REGION}"
 mkdir -p "$KFILT_DIR"
+
 KFILT_IDX="${KFILT_DIR}/${REGION}.kfilt.idx"
 
 if [ ! -f "$KFILT_IDX" ]; then
     MERYL_ALLELES="${OUTPUT_DIR}/meryl/${CHROM}/${REGION}/${REGION}"
     mkdir -p "$MERYL_ALLELES"
+
     MERYL_DIFF="${OUTPUT_DIR}/meryl/${CHROM}/${REGION}/${REGION}_unique"
     UNIQUE_KMERS="${OUTPUT_DIR}/meryl/${CHROM}/${REGION}/${REGION}.unique_kmers.txt"
 
@@ -166,6 +222,7 @@ if [ ! -f "$KFILT_IDX" ]; then
     meryl count k=31 threads="$THREADS" memory="$MEM_GB" "$ALLELES_FASTA" output "$MERYL_ALLELES"
     meryl difference "$MERYL_ALLELES" "$MERYL_REF_DB" output "$MERYL_DIFF"
     meryl print "$MERYL_DIFF" > "$UNIQUE_KMERS"
+
     kfilt build -k "$UNIQUE_KMERS" -K 31 -o "$KFILT_IDX"
 
     rm -rf "$MERYL_ALLELES" "$MERYL_DIFF"
@@ -179,6 +236,7 @@ echo "[Step 5] Filtering low-complexity nodes"
 
 PANPLEXITY_DIR="${OUTPUT_DIR}/panplexity/${CHROM}/${REGION}"
 mkdir -p "$PANPLEXITY_DIR"
+
 PANPLEXITY_MASK="${PANPLEXITY_DIR}/${REGION}.mask.tsv"
 
 if [ ! -f "$PANPLEXITY_MASK" ]; then
@@ -209,6 +267,7 @@ echo "[Step 6] Computing path dissimilarities and clustering"
 
 DISSIM_DIR="${ODGI_DIR}/dissimilarity/${CHROM}/${REGION}"
 mkdir -p "$DISSIM_DIR"
+
 DISSIM_FILE="${DISSIM_DIR}/${REGION}.tsv.gz"
 
 if [ ! -f "$DISSIM_FILE" ]; then
@@ -217,6 +276,7 @@ fi
 
 CLUSTER_DIR="${OUTPUT_DIR}/cluster/${CHROM}/${REGION}"
 mkdir -p "$CLUSTER_DIR"
+
 CLUSTER_JSON="${CLUSTER_DIR}/${REGION}.clusters.json"
 
 if [ ! -f "$CLUSTER_JSON" ]; then
@@ -235,35 +295,48 @@ process_sample() {
     local SAMPLE="$1"
     echo "  [Sample: $SAMPLE]"
 
-    SAMPLE_ALIGNMENT=$(find resources/alignments -name "${SAMPLE}.*am" 2>/dev/null | head -1)
+    # Get alignment path from map
+    SAMPLE_ALIGNMENT=$(get_sample_alignment "$SAMPLE" "$ALIGNMENT_MAP")
+
     if [ -z "$SAMPLE_ALIGNMENT" ]; then
-        echo "    WARNING: No alignment found for $SAMPLE, skipping"
+        echo "    WARNING: No alignment found for $SAMPLE in $ALIGNMENT_MAP, skipping"
         return
+    fi
+
+    echo "    Alignment: $SAMPLE_ALIGNMENT"
+
+    if [ ! -f "$SAMPLE_ALIGNMENT" ]; then
+        echo "    ERROR: Alignment file not found: $SAMPLE_ALIGNMENT"
+        return 1
     fi
 
     # 7.1: Extract mapped reads
     SAMTOOLS_DIR="${OUTPUT_DIR}/samtools/fasta/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$SAMTOOLS_DIR"
+
     MAPPED_FASTA="${SAMTOOLS_DIR}/${REGION}.mapped.fasta.gz"
 
     if [ ! -f "$MAPPED_FASTA" ]; then
         echo "    Extracting mapped reads..."
         samtools view -T "$REFERENCE" -@ "$THREADS" -L "$ALIGN_BED" -M -b "$SAMPLE_ALIGNMENT" | \
-        samtools sort -n -@ "$THREADS" -T "${SAMTOOLS_DIR}/${REGION}" - | \
-        samtools fasta -@ "$THREADS" - | gzip > "$MAPPED_FASTA"
+            samtools sort -n -@ "$THREADS" -T "${SAMTOOLS_DIR}/${REGION}" - | \
+            samtools fasta -@ "$THREADS" - | gzip > "$MAPPED_FASTA"
     fi
 
     # 7.2: Use pre-extracted unmapped reads
     UNMAPPED_FASTA="${OUTPUT_DIR}/samtools/fasta/${SAMPLE}/unmapped.fasta.gz"
+
     if [ ! -f "$UNMAPPED_FASTA" ]; then
         echo "    ERROR: Unmapped reads not found for $SAMPLE"
         echo "    Expected: $UNMAPPED_FASTA"
+        echo "    Please run preprocess_sample for $SAMPLE first"
         return 1
     fi
 
     # 7.3: Filter unmapped reads
     KFILT_SAMPLE_DIR="${OUTPUT_DIR}/kfilt/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$KFILT_SAMPLE_DIR"
+
     FILTERED_UNMAPPED="${KFILT_SAMPLE_DIR}/${REGION}.unmapped.fasta.gz"
 
     if [ ! -f "$FILTERED_UNMAPPED" ]; then
@@ -276,6 +349,7 @@ process_sample() {
     # 7.4: Combine reads
     COMBINE_DIR="${OUTPUT_DIR}/combine/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$COMBINE_DIR"
+
     COMBINED_FASTA="${COMBINE_DIR}/${REGION}.fasta.gz"
 
     if [ ! -f "$COMBINED_FASTA" ]; then
@@ -285,10 +359,12 @@ process_sample() {
     # 7.5: Realign and project
     BWA_DIR="${OUTPUT_DIR}/bwa-mem2/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$BWA_DIR"
+
     REALIGNED_SAM="${BWA_DIR}/${REGION}.realigned.sam"
 
     GFAINJECT_DIR="${OUTPUT_DIR}/gfainject/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$GFAINJECT_DIR"
+
     GAF_FILE="${GFAINJECT_DIR}/${REGION}.gaf.gz"
 
     if [ ! -f "$GAF_FILE" ]; then
@@ -303,6 +379,7 @@ process_sample() {
     # 7.6: Calculate coverage
     GAFPACK_DIR="${OUTPUT_DIR}/gafpack/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$GAFPACK_DIR"
+
     COVERAGE_FILE="${GAFPACK_DIR}/${REGION}.gafpack.gz"
 
     if [ ! -f "$COVERAGE_FILE" ]; then
@@ -315,6 +392,7 @@ process_sample() {
     # 7.7: Genotype
     COSIGT_DIR="${OUTPUT_DIR}/cosigt/${SAMPLE}/${CHROM}/${REGION}"
     mkdir -p "$COSIGT_DIR"
+
     GENOTYPE_FILE="${COSIGT_DIR}/${REGION}.cosigt_genotype.tsv"
 
     if [ ! -f "$GENOTYPE_FILE" ]; then

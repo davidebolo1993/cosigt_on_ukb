@@ -8,3 +8,5 @@ singularity/*
 singularity
 cosigt_small_test/*
 cosigt_small_test
+ukb_rap/
+ukb_rap/*
