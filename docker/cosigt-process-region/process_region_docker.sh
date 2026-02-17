@@ -76,6 +76,7 @@ get_sample_alignment() {
 ################################################################################
 
 OUTPUT_DIR=$(get_yaml_value "output")
+INPUT_DIR=$$(get_yaml_value "input")
 REFERENCE=$(get_yaml_value "reference")
 ALIGNMENT_MAP=$(get_yaml_value "alignment_map")
 GRAPH_MAP=$(get_yaml_value "graph_map")
@@ -102,7 +103,7 @@ echo ""
 # Validate Prerequisites
 ################################################################################
 
-MERYL_REF_DB="${OUTPUT_DIR}/meryl/reference"
+MERYL_REF_DB="${INPUT_DIR}/meryl/reference"
 if [ ! -d "$MERYL_REF_DB" ] || [ ! -f "${MERYL_REF_DB}/merylIndex" ]; then
     echo "ERROR: Reference k-mer database not found!"
     echo "  Expected: $MERYL_REF_DB"
@@ -324,7 +325,7 @@ process_sample() {
     fi
 
     # 7.2: Use pre-extracted unmapped reads
-    UNMAPPED_FASTA="${OUTPUT_DIR}/samtools/fasta/${SAMPLE}/unmapped.fasta.gz"
+    UNMAPPED_FASTA="${INPUT_DIR}/samtools/fasta/${SAMPLE}/unmapped.fasta.gz"
 
     if [ ! -f "$UNMAPPED_FASTA" ]; then
         echo "    ERROR: Unmapped reads not found for $SAMPLE"

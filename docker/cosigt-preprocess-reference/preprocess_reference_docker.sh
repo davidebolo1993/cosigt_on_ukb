@@ -18,6 +18,7 @@ get_yaml_value() {
     grep "^${key}:" "$CONFIG" | sed "s/^${key}:[[:space:]]*//" | tr -d "'" | tr -d '"'
 }
 
+INPUT_DIR=$(get_yaml_value "input")
 OUTPUT_DIR=$(get_yaml_value "output")
 REFERENCE=$(get_yaml_value "reference")
 
@@ -31,7 +32,7 @@ echo "==================================================================="
 
 MERYL_REF_DB="${OUTPUT_DIR}/meryl/reference"
 
-if [ -d "$MERYL_REF_DB" ]; then
+if [ -d "${INPUT_DIR}/meryl/reference" ]; then
     echo "Reference k-mer database already exists"
 else
     mkdir -p "${OUTPUT_DIR}/meryl"

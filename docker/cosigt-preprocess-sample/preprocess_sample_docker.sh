@@ -40,6 +40,7 @@ get_sample_alignment() {
 }
 
 OUTPUT_DIR=$(get_yaml_value "output")
+INPUT_DIR=$(get_yaml_value "input")
 REFERENCE=$(get_yaml_value "reference")
 ALIGNMENT_MAP=$(get_yaml_value "alignment_map")
 
@@ -90,7 +91,7 @@ mkdir -p "$UNMAPPED_DIR"
 
 UNMAPPED_FASTA="${UNMAPPED_DIR}/unmapped.fasta.gz"
 
-if [ -f "$UNMAPPED_FASTA" ]; then
+if [ -f "${INPUT_DIR}/samtools/fasta/${SAMPLE}/unmapped.fasta.gz" ]; then
     echo "✓ Unmapped reads already exist: $UNMAPPED_FASTA"
     echo "Skipping extraction..."
 else
