@@ -146,6 +146,9 @@ RUN conda update -y conda && \
 RUN echo "source activate renv" > ~/.bashrc
 ENV PATH=/miniconda/envs/renv/bin:${PATH}
 
+# Chown
+RUN chown -R root:root /usr/local/bin
+
 # Copy all scripts and R files into the image
 COPY process_region_docker.sh /usr/local/bin/process_region_docker.sh
 COPY cluster.r /usr/local/bin/cluster.r
