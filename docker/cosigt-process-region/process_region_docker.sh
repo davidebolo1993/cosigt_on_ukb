@@ -76,7 +76,7 @@ get_sample_alignment() {
 ################################################################################
 
 OUTPUT_DIR=$(get_yaml_value "output")
-INPUT_DIR=$$(get_yaml_value "input")
+INPUT_DIR=$(get_yaml_value "input")
 REFERENCE=$(get_yaml_value "reference")
 ALIGNMENT_MAP=$(get_yaml_value "alignment_map")
 GRAPH_MAP=$(get_yaml_value "graph_map")
