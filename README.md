@@ -229,21 +229,21 @@ dx wait <job-id>
 After all three steps complete, your DNAnexus project destination will contain:
 
 ```text
-cosigt_test/
+cosigt_results/
 ├── meryl/
 │   └── reference/                  # Meryl k-mer DB (Step 1)
 ├── samtools/fasta/
-│   ├── HG00096/
+│   ├── SAMPLE1/
 │   │   └── unmapped.fasta.gz       # Unmapped reads (Step 2)
-│   └── HG00171/
+│   └── SAMPLE2/
 │       └── unmapped.fasta.gz
 └── cosigt/
-    ├── HG00096/
-    │   └── chr1/
-    │       └── chr1_103304997_103901127/
-    │           └── chr1_103304997_103901127.cosigt_genotype.tsv
-    └── HG00171/
-        └── chr1/
-            └── chr1_103304997_103901127/
-                └── chr1_103304997_103901127.cosigt_genotype.tsv
+    ├── SAMPLE1/
+    │   └── chrA/
+    │       └── chrA_START1_END1/
+    │           └── chrA_START1_END1.cosigt_genotype.tsv
+    └── SAMPLE2/
+        └── chrA/
+            └── chrA_START1_END1/
+                └── chrA_START1_END1.cosigt_genotype.tsv
 ```
