@@ -143,12 +143,11 @@ if [ ! -f "${INPUT_DIR}/alleles/${CHROM}/${REGION}/${REGION}.fasta.gz" ]; then
     echo "  Extracting assemblies from graph..."
     odgi paths -i "$INPUT_GRAPH" -f | bgzip -c > "$ALLELES_FASTA"
     samtools faidx "$ALLELES_FASTA"
-fi
-
-# Build BWA-MEM2 index
-if [ ! -f "${INPUT_DIR}/alleles/${CHROM}/${REGION}/${REGION}.fasta.gz.bwt.2bit.64" ]; then
-    echo "  Building BWA-MEM2 index..."
+    echo "  Building BWA-MEM2 index..
     bwa-mem2 index "$ALLELES_FASTA"
+else
+    ALLELES_DIR="${INPUT_DIR}/alleles/${CHROM}/${REGION}"
+    ALLELES_FASTA="${ALLELES_DIR}/${REGION}.fasta.gz"
 fi
 
 ################################################################################
