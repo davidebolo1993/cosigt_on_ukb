@@ -6,11 +6,11 @@ This guide describes how to run the main steps of the [cosigt](https://github.co
 
 The pipeline runs in three sequential stages:
 
-| Step | Script | Runs | Instance |
-|------|--------|------|----------|
-| 1. Preprocess reference | `submit-rap-reference.sh` | Once | `mem3_ssd2_v2_x8` |
-| 2. Preprocess samples | `submit-rap-sample.sh` | One job per sample (parallel) | `mem1_ssd1_v2_x8` |
-| 3. Process regions | `submit-rap-region.sh` | One job per region (parallel) | `mem2_ssd1_v2_x16` |
+| Step | Runs | Instance |
+|------|------|----------|
+| 1. Preprocess reference | Once | `mem3_ssd2_v2_x8` |
+| 2. Preprocess samples | One job per sample (parallel) | `mem1_ssd1_v2_x8` |
+| 3. Process regions | One job per region (parallel) | `mem2_ssd1_v2_x16` |
 
 Large input files (reference FASTA, CRAMs/BAMs, graph `.og` files) are accessed directly via the `/mnt/project` FUSE mount
 
