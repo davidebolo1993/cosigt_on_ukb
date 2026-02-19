@@ -146,8 +146,8 @@ if [ ! -f "${INPUT_DIR}/alleles/${CHROM}/${REGION}/${REGION}.fasta.gz" ]; then
 fi
 
 # Build BWA-MEM2 index
-echo "  Building BWA-MEM2 index..."
 if [ ! -f "${INPUT_DIR}/alleles/${CHROM}/${REGION}/${REGION}.fasta.gz.bwt.2bit.64" ]; then
+    echo "  Building BWA-MEM2 index..."
     bwa-mem2 index "$ALLELES_FASTA"
 fi
 
