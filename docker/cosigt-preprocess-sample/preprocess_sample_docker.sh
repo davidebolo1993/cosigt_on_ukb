@@ -25,17 +25,17 @@ get_yaml_value() {
 get_sample_alignment() {
     local sample="$1"
     local tsv_file="$2"
-    
+
     if [ ! -f "$tsv_file" ]; then
         echo "ERROR: Alignment map file not found: $tsv_file" >&2
         return 1
     fi
-    
-    local alignment=$(awk -v s="$sample" '$2 == s {print $1}' "$tsv_file")
+
+    local alignment=$(awk -F'\t' -v s="$sample" '$2 == s {print $1}' "$tsv_file")
     if [ -z "$alignment" ]; then
-        alignment=$(awk -v s="$sample" '$1 == s {print $2}' "$tsv_file")
+        alignment=$(awk -F'\t' -v s="$sample" '$1 == s {print $2}' "$tsv_file")
     fi
-    
+
     echo "$alignment"
 }
 

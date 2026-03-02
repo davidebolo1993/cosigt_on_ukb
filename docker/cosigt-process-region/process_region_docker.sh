@@ -62,10 +62,9 @@ get_sample_alignment() {
         return 1
     fi
 
-    # TSV format: sample<TAB>path  OR  path<TAB>sample
-    local alignment=$(awk -v s="$sample" '$2 == s {print $1}' "$tsv_file")
+    local alignment=$(awk -F'\t' -v s="$sample" '$2 == s {print $1}' "$tsv_file")
     if [ -z "$alignment" ]; then
-        alignment=$(awk -v s="$sample" '$1 == s {print $2}' "$tsv_file")
+        alignment=$(awk -F'\t' -v s="$sample" '$1 == s {print $2}' "$tsv_file")
     fi
 
     echo "$alignment"
