@@ -27,7 +27,6 @@ jobs:
           - cosigt-preprocess-reference
           - cosigt-preprocess-sample
           - cosigt-process-region
-          - nebula-process
     
     steps:
       - name: Checkout repository
