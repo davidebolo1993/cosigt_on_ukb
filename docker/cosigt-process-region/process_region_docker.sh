@@ -6,16 +6,19 @@ set -euo pipefail
 # COSIGT Pipeline - Region Processing (Docker/native version)
 ################################################################################
 
+# CHANGED: added optional [EXTRA_BED] argument
 if [ "$#" -lt 3 ]; then
-    echo "Usage: $0 <REGION> <CONFIG> <THREADS>"
+    echo "Usage: $0 <REGION> <CONFIG> <THREADS> [EXTRA_BED]"
     echo ""
     echo "Example: $0 chr1_100000_200000 config.yaml 12"
+    echo "         $0 chr1_100000_200000 config.yaml 12 /path/to/extra.bed"
     exit 1
 fi
 
 REGION="$1"
 CONFIG="$2"
 THREADS="$3"
+EXTRA_BED="${4:-}"   # CHANGED: optional 4th argument, empty string if not provided
 
 ################################################################################
 # Simple YAML Parser
@@ -42,8 +45,6 @@ get_graph_path() {
         return 1
     fi
 
-    # TSV format: region<TAB>path  OR  path<TAB>region
-    # Try both formats
     local graph_path=$(awk -v r="$region" '$1 == r {print $2}' "$tsv_file")
     if [ -z "$graph_path" ]; then
         graph_path=$(awk -v r="$region" '$2 == r {print $1}' "$tsv_file")
@@ -95,6 +96,10 @@ echo "==================================================================="
 echo "Samples: ${#SAMPLES[@]} | Threads: $THREADS"
 echo "Graph map: $GRAPH_MAP"
 echo "Alignment map: $ALIGNMENT_MAP"
+# CHANGED: print EXTRA_BED info if provided
+if [ -n "$EXTRA_BED" ]; then
+    echo "Extra BED: $EXTRA_BED"
+fi
 echo "==================================================================="
 echo ""
 
@@ -120,7 +125,6 @@ echo "[Step 1] Processing graph and extracting assemblies"
 ALLELES_DIR="${OUTPUT_DIR}/alleles/${CHROM}/${REGION}"
 mkdir -p "$ALLELES_DIR"
 
-# Get graph path from map
 INPUT_GRAPH=$(get_graph_path "$REGION" "$GRAPH_MAP")
 
 if [ -z "$INPUT_GRAPH" ]; then
@@ -178,6 +182,10 @@ fi
 ################################################################################
 # Step 3: Prepare BED Files
 ################################################################################
+# CHANGED: REF_BED is always just the region coordinates.
+# ALIGN_BED is built from EXTRA_BED column 5 (seqname:start-end entries) if a
+# matching line is found (col1==CHROM, col2==REGION_START, col3==REGION_END).
+# If no match or no EXTRA_BED is provided, ALIGN_BED is a copy of REF_BED.
 
 echo "[Step 3] Preparing BED files"
 
@@ -188,14 +196,43 @@ mkdir -p "${BEDTOOLS_DIR}/alignment_bed/${CHROM}/${REGION}"
 REF_BED="${BEDTOOLS_DIR}/reference_bed/${CHROM}/${REGION}/${REGION}.bed.gz"
 ALIGN_BED="${BEDTOOLS_DIR}/alignment_bed/${CHROM}/${REGION}/${REGION}.bed.gz"
 
-# Extract coordinates from region name (chr1_100000_200000 -> chr1 100000 200000)
 REGION_START=$(echo "$REGION" | rev | cut -d'_' -f2 | rev)
 REGION_END=$(echo "$REGION" | rev | cut -d'_' -f1 | rev)
 
 if [ ! -f "${INPUT_DIR}/bedtools/alignment_bed/${CHROM}/${REGION}/${REGION}.bed.gz" ]; then
+
     echo "  Creating reference BED from region coordinates..."
     echo -e "${CHROM}\t${REGION_START}\t${REGION_END}" | gzip > "$REF_BED"
-    cp "$REF_BED" "$ALIGN_BED"
+
+    if [ -n "$EXTRA_BED" ] && [ -f "$EXTRA_BED" ]; then
+        EXTRA_ENTRIES=$(awk \
+            -v c="$CHROM" -v s="$REGION_START" -v e="$REGION_END" \
+            '$1 == c && $2 == s && $3 == e { print $5 }' \
+            "$EXTRA_BED")
+
+        if [ -n "$EXTRA_ENTRIES" ]; then
+            echo "  Found extra alignment regions in $EXTRA_BED, extending ALIGN_BED..."
+            {
+                # include the reference
+                echo -e "${CHROM}\t${REGION_START}\t${REGION_END}"
+
+                echo "$EXTRA_ENTRIES" | tr ',' '\n' | while IFS= read -r entry; do
+                    [ -z "$entry" ] && continue
+                    seq=$(echo "$entry" | rev | cut -d: -f2- | rev)
+                    coords=$(echo "$entry" | rev | cut -d: -f1 | rev)
+                    start=$(echo "$coords" | cut -d- -f1)
+                    end=$(echo "$coords" | cut -d- -f2)
+                    echo -e "${seq}\t${start}\t${end}"
+                done
+            } | gzip > "$ALIGN_BED"
+        else
+            echo "  No matching entry in $EXTRA_BED for $REGION, ALIGN_BED = REF_BED"
+            cp "$REF_BED" "$ALIGN_BED"
+        fi
+    else
+        cp "$REF_BED" "$ALIGN_BED"
+    fi
+
 else
     BEDTOOLS_DIR="${INPUT_DIR}/bedtools"
     REF_BED="${BEDTOOLS_DIR}/reference_bed/${CHROM}/${REGION}/${REGION}.bed.gz"
@@ -313,7 +350,6 @@ process_sample() {
     local SAMPLE="$1"
     echo "  [Sample: $SAMPLE]"
 
-    # Get alignment path from map
     SAMPLE_ALIGNMENT=$(get_sample_alignment "$SAMPLE" "$ALIGNMENT_MAP")
 
     if [ -z "$SAMPLE_ALIGNMENT" ]; then
@@ -436,7 +472,6 @@ process_sample() {
     echo "    ✓ Completed"
 }
 
-# Process all samples
 for SAMPLE in "${SAMPLES[@]}"; do
     process_sample "$SAMPLE"
 done
