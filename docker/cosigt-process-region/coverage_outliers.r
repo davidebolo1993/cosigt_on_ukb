@@ -7,8 +7,8 @@ node_length_file <- args[3]
 panplexity_mask_file <- args[4]
 
 library(data.table)
-library(ggplot2)
-library(gridExtra)
+#library(ggplot2)
+#library(gridExtra)
 
 df <- fread(table_in, sep = "\t", header = TRUE, check.names = FALSE)
 node_lengths <- fread(node_length_file, sep = "\t", header = FALSE, col.names = c("node", "length"))
@@ -49,23 +49,23 @@ node_stats[, mask_type :=
 node_stats$mask_type <- factor(node_stats$mask_type, levels = c("unmasked", "panplexity_masked", "coverage_masked", "both_masked"))
 
 # Plots
-p1 <- ggplot(node_stats, aes(x = length, fill = mask_type)) +
-  geom_density(alpha = 0.6) +
-  labs(title = "Node Length Density", x = "Length", y = "Density", fill = "Mask type") +
-  theme_minimal()
+#p1 <- ggplot(node_stats, aes(x = length, fill = mask_type)) +
+#  geom_density(alpha = 0.6) +
+#  labs(title = "Node Length Density", x = "Length", y = "Density", fill = "Mask type") +
+#  theme_minimal()
 
-p2 <- ggplot(node_stats, aes(x = mean_coverage, fill = mask_type)) +
-  geom_density(alpha = 0.6) +
-  labs(title = "Mean Coverage Density", x = "Mean coverage", y = "Density", fill = "Mask type") +
-  theme_minimal()
+#p2 <- ggplot(node_stats, aes(x = mean_coverage, fill = mask_type)) +
+#  geom_density(alpha = 0.6) +
+#  labs(title = "Mean Coverage Density", x = "Mean coverage", y = "Density", fill = "Mask type") +
+#  theme_minimal()
 
-p3 <- ggplot(node_stats, aes(x = node, y = mask_type, color = mask_type)) +
-  geom_point(size = 1.25, alpha=0.7) +
-  labs(title = "Masking Status by Node Index", x = "Node index", y = "Mask type", color = "Mask type") +
-  theme_minimal()
+#p3 <- ggplot(node_stats, aes(x = node, y = mask_type, color = mask_type)) +
+#  geom_point(size = 1.25, alpha=0.7) +
+#  labs(title = "Masking Status by Node Index", x = "Node index", y = "Mask type", color = "Mask type") +
+#  theme_minimal()
 
-comb_plot <- grid.arrange(p1, p2, p3, ncol = 1)
-ggsave(paste0(output_prefix, "_mask_distributions.png"), comb_plot, width = 10, height = 20, dpi = 400)
+#comb_plot <- grid.arrange(p1, p2, p3, ncol = 1)
+#ggsave(paste0(output_prefix, "_mask_distributions.png"), comb_plot, width = 10, height = 20, dpi = 400)
 
 mask_table <- node_stats[, .(node, panplexity_mask, coverage_mask, final_mask)]
 fwrite(mask_table, paste0(output_prefix, "_node_masks.tsv"), sep = "\t", quote = FALSE)
